@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>アダアフィ管理ツール</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    .account-card {
+      border: 1px solid #ccc; padding: 12px; margin: 10px;
+      border-radius: 10px;
+    }
+    .admin-section { margin-bottom: 30px; }
+    .input-group { margin: 6px 0; }
+    label { display: inline-block; width: 80px; }
+    input[type="text"], input[type="number"] { width: 200px; }
+    button { margin: 5px; }
+    canvas { max-width: 100%; height: 300px; }
+    .filter button {
+      margin: 5px; padding: 10px;
+      background-color: #4caf50; color: white;
+      border: none; border-radius: 5px;
+    }
+    .filter button:hover { background-color: #45a049; }
+    .edit-inline input { width: 100%; margin: 4px 0; }
+    .edit-inline button { margin-right: 5px; }
+    .deleted-section {
+      background: #eee; padding: 10px;
+      border-radius: 8px; margin-top: 30px;
+    }
+    /* モーダル */
+    .modal {
+      display: none; position: fixed;
+      z-index: 1000; left: 0; top: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0, 0, 0, 0.4);
+      justify-content: center; align-items: center;
+    }
+    .modal-content {
+      background-color: #fff;
+      padding: 20px; border-radius: 8px;
+      width: 300px;
+    }
+    .modal-content input {
+      width: 100%; margin: 5px 0;
+    }
+    .modal-content button {
+      margin: 5px 3px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>アダアフィアカウント管理ツール</h1>
+
+<!-- アカウント追加フォーム -->
+<div>
+  <h2>アカウント追加</h2>
+  <div class="input-group">
+    <label>名前:</label><input type="text" id="name">
+    <label>@ID:</label><input type="text" id="handle">
+  </div>
+  <div class="input-group">
+    <label>URL:</label><input type="text" id="url">
+    <label>運用者:</label><input type="text" id="manager">
+  </div>
+  <button onclick="addAccount()">アカウントを追加</button>
+</div>
+
+<!-- フィルター -->
+<div class="filter">
+  <button onclick="setFilter('7')">1週間</button>
+  <button onclick="setFilter('30')">1ヶ月</button>
+  <button onclick="setFilter('365')">1年</button>
+  <button onclick="setFilter('all')">全て</button>
+</div>
+
+<!-- アカウントリスト -->
+<div id="account-list"></div>
+
+<!-- 削除済みアカウント -->
+<div class="deleted-section">
+  <h2>🗑️ 削除済みアカウント一覧</h2>
+  <div id="deleted-list"></div>
+</div>
+
+<!-- 詳細情報編集モーダル -->
+<div id="modal" class="modal">
+  <div class="modal-content">
+    <h3>詳細情報の編集</h3>
+    <input type="text" id="modal-twitter_id" placeholder="Twitter ID">
+    <input type="text" id="modal-password" placeholder="パスワード">
+    <input type="text" id="modal-email" placeholder="メールアドレス">
+    <input type="text" id="modal-twofa" placeholder="2FA">
+    <input type="text" id="modal-backup" placeholder="バックアップコード">
+    <input type="text" id="modal-phone" placeholder="電話番号">
+    <input type="text" id="modal-token" placeholder="トークンキー">
+    <button onclick="saveModal()">💾 保存</button>
+    <button onclick="closeModal()">キャンセル</button>
+  </div>
+</div>
+
+<!-- 運用者変更モーダル -->
+<div id="manager-modal" class="modal">
+  <div class="modal-content">
+    <h3>運用者変更</h3>
+    <input type="text" id="modal-new-manager" placeholder="新しい運用者名">
+    <button onclick="saveManagerChange()">💾 保存</button>
+    <button onclick="closeManagerModal()">キャンセル</button>
+  </div>
+</div>
+
+<script>
+let accounts = JSON.parse(localStorage.getItem("accounts") || "[]");
+let deletedAccounts = JSON.parse(localStorage.getItem("deletedAccounts") || "[]");
+let filterDays = 'all';
+let currentEditId = null;
+
+function saveData() {
+  localStorage.setItem("accounts", JSON.stringify(accounts));
+  localStorage.setItem("deletedAccounts", JSON.stringify(deletedAccounts));
+}
+
+function addAccount() {
+  const name = document.getElementById("name").value.trim();
+  const handle = document.getElementById("handle").value.trim();
+  const url = document.getElementById("url").value.trim();
+  const manager = document.getElementById("manager").value.trim();
+  if (!name || !handle || !manager) return alert("必須項目が空です");
+
+  const id = Date.now().toString();
+  accounts.push({
+    id, name, handle, url, manager,
+    records: [],
+    twitter_id: '', password: '', email: '',
+    twofa: '', backup: '', phone: '', token: ''
+  });
+  saveData();
+  render();
+}
+
+function deleteAccount(id) {
+  if (!confirm("このアカウントを削除しますか？")) return;
+  const acc = accounts.find(a => a.id === id);
+  deletedAccounts.push(acc);
+  accounts = accounts.filter(a => a.id !== id);
+  saveData();
+  render();
+}
+
+function restoreAccount(id) {
+  const acc = deletedAccounts.find(a => a.id === id);
+  accounts.push(acc);
+  deletedAccounts = deletedAccounts.filter(a => a.id !== id);
+  saveData();
+  render();
+}
+
+function deleteAccountPermanently(id) {
+  if (!confirm("完全に削除しますか？")) return;
+  deletedAccounts = deletedAccounts.filter(a => a.id !== id);
+  saveData();
+  render();
+}
+
+function deleteManager(managerName) {
+  if (!confirm(`${managerName}を削除しますか？\n（関連アカウントも削除されます）`)) return;
+  const toDelete = accounts.filter(a => a.manager === managerName);
+  deletedAccounts.push(...toDelete);
+  accounts = accounts.filter(a => a.manager !== managerName);
+  saveData();
+  render();
+}
+
+function addFollowerRecord(id) {
+  const value = parseInt(prompt("今日のフォロワー数を入力してください"));
+  if (isNaN(value)) return;
+
+  const account = accounts.find(a => a.id === id);
+  const today = new Date().toISOString().split("T")[0];
+  const existing = account.records.find(r => r.date === today);
+  if (existing) {
+    if (!confirm("すでに今日の記録があります。上書きしますか？")) return;
+    existing.value = value;
+  } else {
+    account.records.push({ date: today, value });
+  }
+  saveData();
+  render();
+}
+
+function editInline(id) {
+  const card = document.getElementById(`card-${id}`);
+  const acc = accounts.find(a => a.id === id);
+  card.innerHTML = `
+    <div class="edit-inline">
+      <input type="text" value="${acc.name}" id="edit-name-${id}">
+      <input type="text" value="${acc.handle}" id="edit-handle-${id}">
+      <input type="text" value="${acc.url}" id="edit-url-${id}">
+      <button onclick="saveInlineEdit('${id}')">💾 保存</button>
+      <button onclick="render()">キャンセル</button>
+    </div>
+  `;
+}
+
+function saveInlineEdit(id) {
+  const acc = accounts.find(a => a.id === id);
+  acc.name = document.getElementById(`edit-name-${id}`).value;
+  acc.handle = document.getElementById(`edit-handle-${id}`).value;
+  acc.url = document.getElementById(`edit-url-${id}`).value;
+  saveData();
+  render();
+}
+
+function setFilter(days) {
+  filterDays = days;
+  render();
+}
+
+function openModal(id) {
+  currentEditId = id;
+  const acc = accounts.find(a => a.id === id);
+  document.getElementById("modal-twitter_id").value = acc.twitter_id;
+  document.getElementById("modal-password").value = acc.password;
+  document.getElementById("modal-email").value = acc.email;
+  document.getElementById("modal-twofa").value = acc.twofa;
+  document.getElementById("modal-backup").value = acc.backup;
+  document.getElementById("modal-phone").value = acc.phone;
+  document.getElementById("modal-token").value = acc.token;
+  document.getElementById("modal").style.display = "flex";
+}
+
+function closeModal() {
+  currentEditId = null;
+  document.getElementById("modal").style.display = "none";
+}
+
+function saveModal() {
+  const acc = accounts.find(a => a.id === currentEditId);
+  acc.twitter_id = document.getElementById("modal-twitter_id").value;
+  acc.password = document.getElementById("modal-password").value;
+  acc.email = document.getElementById("modal-email").value;
+  acc.twofa = document.getElementById("modal-twofa").value;
+  acc.backup = document.getElementById("modal-backup").value;
+  acc.phone = document.getElementById("modal-phone").value;
+  acc.token = document.getElementById("modal-token").value;
+  saveData();
+  closeModal();
+  render();
+}
+
+function openManagerModal(id) {
+  currentEditId = id;
+  document.getElementById("modal-new-manager").value = '';
+  document.getElementById("manager-modal").style.display = "flex";
+}
+
+function closeManagerModal() {
+  currentEditId = null;
+  document.getElementById("manager-modal").style.display = "none";
+}
+
+function saveManagerChange() {
+  const newManager = document.getElementById("modal-new-manager").value.trim();
+  if (!newManager) {
+    alert("運用者名を入力してください");
+    return;
+  }
+  const acc = accounts.find(a => a.id === currentEditId);
+  acc.manager = newManager;
+  saveData();
+  closeManagerModal();
+  render();
+}
+
+function render() {
+  const group = {};
+  accounts.forEach(acc => {
+    if (!group[acc.manager]) group[acc.manager] = [];
+    group[acc.manager].push(acc);
+  });
+
+  const allManagers = new Set(accounts.map(a => a.manager).concat(deletedAccounts.map(a => a.manager)));
+  const list = document.getElementById("account-list");
+  list.innerHTML = "";
+
+  for (const manager of allManagers) {
+    const section = document.createElement("div");
+    section.className = "admin-section";
+    section.innerHTML = `<h3>運用者: ${manager} <button onclick="deleteManager('${manager}')">運用者を削除</button></h3>`;
+
+    const accs = group[manager] || [];
+    if (accs.length === 0) {
+      section.innerHTML += "<p>（アカウントなし）</p>";
+    }
+
+    accs.forEach(acc => {
+      const div = document.createElement("div");
+      div.className = "account-card";
+      div.id = `card-${acc.id}`;
+      div.innerHTML = `
+        <strong>${acc.name}</strong>（@${acc.handle}）<br>
+        <a href="${acc.url}" target="_blank">${acc.url}</a><br>
+        運用者: ${acc.manager}<br>
+        <button onclick="addFollowerRecord('${acc.id}')">📈 フォロワー追加</button>
+        <button onclick="openModal('${acc.id}')">⚙️ 詳細情報</button>
+        <button onclick="editInline('${acc.id}')">✏️ 編集</button>
+        <button onclick="openManagerModal('${acc.id}')">👤 運用者変更</button>
+        <button onclick="deleteAccount('${acc.id}')">🗑️ 削除</button>
+        <canvas id="chart-${acc.id}"></canvas>
+      `;
+      section.appendChild(div);
+      setTimeout(() => drawChart(acc), 10);
+    });
+
+    list.appendChild(section);
+  }
+
+  const dlist = document.getElementById("deleted-list");
+  dlist.innerHTML = "";
+  deletedAccounts.forEach(acc => {
+    const div = document.createElement("div");
+    div.className = "account-card";
+    div.innerHTML = `
+      <strong>${acc.name}</strong>（@${acc.handle}） - ${acc.manager}<br>
+      <button onclick="restoreAccount('${acc.id}')">↩️ 復元</button>
+      <button onclick="deleteAccountPermanently('${acc.id}')">❌ 完全削除</button>
+    `;
+    dlist.appendChild(div);
+  });
+}
+
+function drawChart(account) {
+  const ctx = document.getElementById(`chart-${account.id}`);
+  if (!ctx) return;
+
+  const sorted = account.records.slice().sort((a, b) => a.date.localeCompare(b.date));
+  const now = new Date();
+  const filtered = sorted.filter(r => {
+    if (filterDays === 'all') return true;
+    const date = new Date(r.date);
+    const diff = (now - date) / (1000 * 60 * 60 * 24);
+    return diff <= parseInt(filterDays);
+  });
+
+  const labels = filtered.map(r => r.date);
+  const data = filtered.map(r => r.value);
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'フォロワー数',
+        data,
+        borderColor: '#4caf50',
+        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+        tension: 0.3,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+render();
+</script>
+</body>
+</html>
