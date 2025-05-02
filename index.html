@@ -149,6 +149,9 @@
         .affiliate-tool .modal-content button {
             margin: 5px 3px;
         }
+        .affiliate-tool .chart-toggle {
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
@@ -172,6 +175,9 @@
     <!-- Affiliate Account Management Tool -->
     <div id="affiliate-tool" class="tab-content affiliate-tool">
         <h2>アダアフィアカウント管理ツール</h2>
+        <div class="chart-toggle">
+            <button onclick="affiliate.toggleCharts()">📊 全体チャート表示/非表示</button>
+        </div>
         <!-- アカウント追加フォーム -->
         <div>
             <h3>アカウント追加</h3>
@@ -292,9 +298,22 @@
             deletedAccounts: JSON.parse(localStorage.getItem("deletedAccounts") || "[]"),
             filterDays: 'all',
             currentEditId: null,
+            chartsVisible: true,
             saveData() {
                 localStorage.setItem("accounts", JSON.stringify(this.accounts));
                 localStorage.setItem("deletedAccounts", JSON.stringify(this.deletedAccounts));
+            },
+            toggleCharts() {
+                this.chartsVisible = !this.chartsVisible;
+                this.render();
+            },
+            toggleAccountChart(id) {
+                const acc = this.accounts.find(a => a.id === id);
+                if (acc) {
+                    acc.chartVisible = !acc.chartVisible;
+                    this.saveData();
+                    this.render();
+                }
             },
             addAccount() {
                 const name = document.getElementById("name").value.trim();
@@ -307,9 +326,15 @@
                     id, name, handle, url, manager,
                     records: [],
                     twitter_id: '', password: '', email: '',
-                    twofa: '', backup: '', phone: '', token: ''
+                    twofa: '', backup: '', phone: '', token: '',
+                    chartVisible: true
                 });
                 this.saveData();
+                // フォームの入力値をクリア
+                document.getElementById("name").value = "";
+                document.getElementById("handle").value = "";
+                document.getElementById("url").value = "";
+                document.getElementById("manager").value = "";
                 this.render();
             },
             deleteAccount(id) {
@@ -461,10 +486,13 @@
                             <button onclick="affiliate.editInline('${acc.id}')">✏️ 編集</button>
                             <button onclick="affiliate.openManagerModal('${acc.id}')">👤 運用者変更</button>
                             <button onclick="affiliate.deleteAccount('${acc.id}')">🗑️ 削除</button>
-                            <canvas id="chart-${acc.id}"></canvas>
+                            <button onclick="affiliate.toggleAccountChart('${acc.id}')">📊 チャート${acc.chartVisible ? '非表示' : '表示'}</button>
+                            <canvas id="chart-${acc.id}" style="display: ${this.chartsVisible && acc.chartVisible ? 'block' : 'none'};"></canvas>
                         `;
                         section.appendChild(div);
-                        setTimeout(() => this.drawChart(acc), 10);
+                        if (this.chartsVisible && acc.chartVisible) {
+                            setTimeout(() => this.drawChart(acc), 10);
+                        }
                     });
                     list.appendChild(section);
                 }
