@@ -152,6 +152,25 @@
         .affiliate-tool .chart-toggle {
             margin: 10px 0;
         }
+        /* 追加スタイル：チャートボタンの状態を明確化 */
+        .chart-toggle button {
+            background-color: #4caf50;
+            transition: background-color 0.3s;
+        }
+        .chart-toggle button.off {
+            background-color: #ccc;
+        }
+        .account-card button.chart-button {
+            background-color: #4caf50;
+            transition: background-color 0.3s;
+        }
+        .account-card button.chart-button.off {
+            background-color: #ccc;
+        }
+        .account-card button.chart-button:disabled {
+            background-color: #ddd;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -176,7 +195,7 @@
     <div id="affiliate-tool" class="tab-content affiliate-tool">
         <h2>アダアフィアカウント管理ツール</h2>
         <div class="chart-toggle">
-            <button onclick="affiliate.toggleCharts()">📊 全体チャート表示/非表示</button>
+            <button id="global-chart-toggle" onclick="affiliate.toggleCharts()">📊 全体チャート表示</button>
         </div>
         <!-- アカウント追加フォーム -->
         <div>
@@ -305,11 +324,14 @@
             },
             toggleCharts() {
                 this.chartsVisible = !this.chartsVisible;
+                const toggleButton = document.getElementById("global-chart-toggle");
+                toggleButton.innerText = this.chartsVisible ? "📊 全体チャート非表示" : "📊 全体チャート表示";
+                toggleButton.classList.toggle("off", !this.chartsVisible);
                 this.render();
             },
             toggleAccountChart(id) {
                 const acc = this.accounts.find(a => a.id === id);
-                if (acc) {
+                if (acc && this.chartsVisible) {
                     acc.chartVisible = !acc.chartVisible;
                     this.saveData();
                     this.render();
@@ -330,7 +352,6 @@
                     chartVisible: true
                 });
                 this.saveData();
-                // フォームの入力値をクリア
                 document.getElementById("name").value = "";
                 document.getElementById("handle").value = "";
                 document.getElementById("url").value = "";
@@ -486,7 +507,11 @@
                             <button onclick="affiliate.editInline('${acc.id}')">✏️ 編集</button>
                             <button onclick="affiliate.openManagerModal('${acc.id}')">👤 運用者変更</button>
                             <button onclick="affiliate.deleteAccount('${acc.id}')">🗑️ 削除</button>
-                            <button onclick="affiliate.toggleAccountChart('${acc.id}')">📊 チャート${acc.chartVisible ? '非表示' : '表示'}</button>
+                            <button class="chart-button${!acc.chartVisible ? ' off' : ''}${!this.chartsVisible ? ' disabled' : ''}" 
+                                    onclick="affiliate.toggleAccountChart('${acc.id}')" 
+                                    ${!this.chartsVisible ? 'disabled' : ''}>
+                                📊 チャート${acc.chartVisible ? '非表示' : '表示'}
+                            </button>
                             <canvas id="chart-${acc.id}" style="display: ${this.chartsVisible && acc.chartVisible ? 'block' : 'none'};"></canvas>
                         `;
                         section.appendChild(div);
@@ -508,6 +533,10 @@
                     `;
                     dlist.appendChild(div);
                 });
+                // 全体チャートボタンの状態を更新
+                const toggleButton = document.getElementById("global-chart-toggle");
+                toggleButton.innerText = this.chartsVisible ? "📊 全体チャート非表示" : "📊 全体チャート表示";
+                toggleButton.classList.toggle("off", !this.chartsVisible);
             },
             drawChart(account) {
                 const ctx = document.getElementById(`chart-${account.id}`);
