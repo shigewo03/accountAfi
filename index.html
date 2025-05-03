@@ -176,8 +176,23 @@
         }
 
         .modal-content input,
+        .modal-content select,
         .modal-content textarea {
             margin-bottom: 10px;
+        }
+
+        #follower-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: auto;
+            background: rgba(0, 0, 0, 0.6);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
         }
 
         .deleted-section { margin-top: 30px; }
@@ -197,13 +212,21 @@
         .toggle-details {
             cursor: pointer;
             color: var(--secondary);
-            text-decoration: underline;
+            text-decoration: underline Grok 3 built by xAI
             margin-bottom: 10px;
             display: inline-block;
         }
 
         .details-content { display: none; }
         .details-content.visible { display: block; }
+
+        .follower-stats {
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+
+        .increase { color: #2196f3; }
+        .decrease { color: #f44336; }
 
         @media (max-width: 600px) {
             .tabs { flex-direction: column; }
@@ -283,6 +306,16 @@
                         <button class="secondary" onclick="closeManagerModal()">キャンセル</button>
                     </div>
                 </div>
+                <div id="follower-modal" class="modal">
+                    <div class="modal-content">
+                        <h3>フォロワー数編集</h3>
+                        <select id="modal-follower-date"></select>
+                        <input type="number" id="modal-follower-value" placeholder="フォロワー数">
+                        <button onclick="saveFollowerEdit()"><i class="fas fa-save"></i> 保存</button>
+                        <button class="danger" onclick="deleteFollowerRecord()"><i class="fas fa-trash"></i> 削除</button>
+                        <button class="secondary" onclick="closeFollowerModal()">キャンセル</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -305,7 +338,7 @@
                         <div>
                             <label>ステータス:</label>
                             <select id="sale-status">
-                                <option value="販売中">販売中</option>
+                                <option value="販売中">販売中</	販売中</option>
                                 <option value="売却済み">売却済み</option>
                                 <option value="保留">保留</option>
                             </select>
@@ -432,7 +465,7 @@
             },
             addFollowerRecord(id) {
                 const value = parseInt(prompt("今日のフォロワー数を入力してください"));
-                if (isNaN(value)) return;
+                if (isNaN(value) || value < 0) return alert("有効なフォロワー数を入力してください");
                 const acc = this.accounts.find(a => a.id === id);
                 const today = new Date().toISOString().split("T")[0];
                 const existing = acc.records.find(r => r.date === today);
@@ -444,6 +477,53 @@
                 }
                 this.saveData();
                 this.render();
+            },
+            editFollowerRecord(id) {
+                const acc = this.accounts.find(a => a.id === id);
+                this.currentEditId = id;
+                const select = document.getElementById("modal-follower-date");
+                select.innerHTML = "";
+                acc.records.sort((a, b) => b.date.localeCompare(a.date)).forEach(r => {
+                    const option = document.createElement("option");
+                    option.value = r.date;
+                    option.text = r.date;
+                    select.appendChild(option);
+                });
+                if (acc.records.length > 0) {
+                    select.value = acc.records[0].date;
+                    document.getElementById("modal-follower-value").value = acc.records.find(r => r.date === select.value).value;
+                } else {
+                    document.getElementById("modal-follower-value").value = "";
+                }
+                document.getElementById("follower-modal").style.display = "flex";
+            },
+            saveFollowerEdit() {
+                const acc = this.accounts.find(a => a.id === this.currentEditId);
+                const date = document.getElementById("modal-follower-date").value;
+                const value = parseInt(document.getElementById("modal-follower-value").value);
+                if (isNaN(value) || value < 0) return alert("有効なフォロワー数を入力してください");
+                const record = acc.records.find(r => r.date === date);
+                if (record) {
+                    record.value = value;
+                } else {
+                    acc.records.push({ date, value });
+                }
+                this.saveData();
+                this.closeFollowerModal();
+                this.render();
+            },
+            deleteFollowerRecord() {
+                if (!confirm("このフォロワー記録を削除しますか？")) return;
+                const acc = this.accounts.find(a => a.id === this.currentEditId);
+                const date = document.getElementById("modal-follower-date").value;
+                acc.records = acc.records.filter(r => r.date !== date);
+                this.saveData();
+                this.closeFollowerModal();
+                this.render();
+            },
+            closeFollowerModal() {
+                this.currentEditId = null;
+                document.getElementById("follower-modal").style.display = "none";
             },
             editInline(id) {
                 const card = document.getElementById(`card-${id}`);
@@ -534,6 +614,15 @@
                     alert("ハンドルが設定されていません");
                 }
             },
+            calculateFollowerStats(records) {
+                if (records.length < 2) return { change: 0, percentage: 0 };
+                const sorted = records.slice().sort((a, b) => b.date.localeCompare(a.date));
+                const latest = sorted[0].value;
+                const previous = sorted[1].value;
+                const change = latest - previous;
+                const percentage = previous !== 0 ? ((change / previous) * 100).toFixed(2) : 0;
+                return { change, percentage };
+            },
             render() {
                 const group = {};
                 this.accounts.forEach(acc => {
@@ -555,6 +644,7 @@
                     const accs = group[manager] || [];
                     if (accs.length === 0) section.innerHTML += "<p>（アカウントなし）</p>";
                     accs.forEach(acc => {
+                        const stats = this.calculateFollowerStats(acc.records);
                         const div = document.createElement("div");
                         div.className = "account-card";
                         div.id = `card-${acc.id}`;
@@ -562,7 +652,15 @@
                             <strong>${acc.name}</strong>（@${acc.handle}）<br>
                             <a href="${acc.url}" target="_blank">${acc.url}</a><br>
                             運用者: ${acc.manager}<br>
+                            <div class="follower-stats">
+                                前日比: 
+                                <span class="${stats.change >= 0 ? 'increase' : 'decrease'}">
+                                    ${stats.change >= 0 ? '+' : ''}${stats.change}人 
+                                    (${stats.percentage >= 0 ? '+' : ''}${stats.percentage}%)
+                                </span>
+                            </div>
                             <button onclick="account.addFollowerRecord('${acc.id}')"><i class="fas fa-chart-line"></i> フォロワー追加</button>
+                            <button class="secondary" onclick="account.editFollowerRecord('${acc.id}')"><i class="fas fa-edit"></i> フォロワー編集</button>
                             <button class="secondary" onclick="account.openModal('${acc.id}')"><i class="fas fa-cog"></i> 詳細情報</button>
                             <button class="secondary" onclick="account.editInline('${acc.id}')"><i class="fas fa-edit"></i> 編集</button>
                             <button class="secondary" onclick="account.openManagerModal('${acc.id}')"><i class="fas fa-user"></i> 運用者変更</button>
@@ -611,6 +709,8 @@
                 });
                 const labels = filtered.map(r => r.date);
                 const data = filtered.map(r => r.value);
+                const stats = this.calculateFollowerStats(account.records);
+                const chartColor = stats.change >= 0 ? '#2196f3' : '#f44336';
                 const minValue = Math.min(...data);
                 const maxValue = Math.max(...data);
                 const range = maxValue - minValue;
@@ -623,8 +723,8 @@
                         datasets: [{
                             label: 'フォロワー数',
                             data,
-                            borderColor: '#4caf50',
-                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            borderColor: chartColor,
+                            backgroundColor: chartColor + '33', // 33 for 20% opacity
                             tension: 0.3,
                             fill: true,
                         }]
@@ -837,6 +937,9 @@
         function closeManagerModal() { account.closeManagerModal(); }
         function addSaleAccount() { sale.addSaleAccount(); }
         function setSaleFilter(status) { sale.setFilter(status); }
+        function saveFollowerEdit() { account.saveFollowerEdit(); }
+        function deleteFollowerRecord() { account.deleteFollowerRecord(); }
+        function closeFollowerModal() { account.closeFollowerModal(); }
     </script>
 </body>
 </html>
